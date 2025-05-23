@@ -2,6 +2,13 @@ import os
 import sys
 from pytubefix import YouTube
 import whisper
+import subprocess
+import torch
+from PIL import Image
+from transformers import CLIPProcessor, CLIPModel;
+import cv2
+
+
 
 # venv/scripts/activate
 
@@ -10,10 +17,54 @@ ffmpeg_path = os.path.abspath("ffmpeg/bin")
 os.environ["PATH"] = ffmpeg_path + os.pathsep + os.environ["PATH"]
 
 
-yt = YouTube("https://www.youtube.com/watch?v=RjNTdLEECN4")
+yt = YouTube("https://www.youtube.com/watch?v=GE-wXrciqqM")
 stream = yt.streams.filter(file_extension='mp4', progressive=True).first()
-stream.download(filename="video.mp4")
+videoFile = "video.mp4"
+stream.download(filename=videoFile)
 
 model = whisper.load_model("tiny")
-result = model.transcribe("video.mp4")
+result = model.transcribe(videoFile)
 transcript = result ["text"]
+
+output_dir = "frames"
+interval = 2 
+
+os.makedirs(output_dir, exist_ok=True)
+
+command = [
+    "ffmpeg", 
+    "-i", 
+    videoFile, 
+    "-vf", 
+    f"fps=1/{interval}", 
+    f"{output_dir}/frame_%04d.jpg"
+]
+
+subprocess.run(command)
+
+
+clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+
+frames_dir = "frames"
+frames = []
+
+for fileName in sorted(os.listdir(frames_dir)):
+    if fileName.endswith(".jpg"):
+        path = os.path.join(frames_dir, fileName)
+        frame = cv2.imread(path)
+        frames.append(frame)
+
+
+
+image_embeddings=[]
+for frame in frames:
+    image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    inputs = clip_processor(images=image, return_tensors="pt")
+
+
+    with torch.no_grad():
+        outputs = clip_model.get_image_features(**inputs)
+    image_embeddings.append(outputs.squeeze(0))
+
+    
