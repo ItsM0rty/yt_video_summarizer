@@ -5,8 +5,10 @@ import whisper
 import subprocess
 import torch
 from PIL import Image
-from transformers import CLIPProcessor, CLIPModel;
+from transformers import CLIPProcessor, CLIPModel, T5Tokenizer, T5ForConditionalGeneration
 import cv2
+from sentence_transformers import SentenceTransformer
+
 
 
 
@@ -67,4 +69,21 @@ for frame in frames:
         outputs = clip_model.get_image_features(**inputs)
     image_embeddings.append(outputs.squeeze(0))
 
-    
+
+
+text_model = SentenceTransformer("all-MiniLM-L6-v2")
+text_embedding = text_model.encode(transcript, convert_to_tensor=True)
+
+
+visual_vector = torch.mean(torch.stack(image_embeddings), dim=0)
+combined_vector = torch.cat((text_embedding, visual_vector), dim=-1)
+
+summarizer_tokenizer = T5Tokenizer.from_pretrained("t5-base")
+summarizer_model = T5ForConditionalGeneration.from_pretrained("t5-base")
+
+input_text = "summarize: " + transcript
+input_ids = summarizer_tokenizer.encode(input_text, return_tensors="pt", max_length = 512, truncation=True)
+summary_ids = summarizer_model.generate(input_ids, max_length=150)
+
+summary = summarizer_tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+print(summary)
